@@ -5,17 +5,17 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
-contract BridgeWatersMarketplace {
-    struct ItemInfo {
-        address payable owner;
-        address tokenAddress;
-        uint256 tokenId;
-        uint256 price;
-        bytes signature;
-        uint256 deadline;
-        bool isActive;
-    }
+struct ItemInfo {
+    address payable owner;
+    address tokenAddress;
+    uint256 tokenId;
+    uint256 price;
+    bytes signature;
+    uint256 deadline;
+    bool isActive;
+}
 
+contract BridgeWatersMarketplace {
     uint256 public itemsCounter;
     mapping(uint256 itemsCounter => ItemInfo) public listedItems;
 
@@ -149,5 +149,19 @@ contract BridgeWatersMarketplace {
         );
 
         emit ItemSold(msg.sender, itemInfo.tokenId, msg.value);
+    }
+
+    address payable owner;
+    address tokenAddress;
+    uint256 tokenId;
+    uint256 price;
+    bytes signature;
+    uint256 deadline;
+    bool isActive;
+
+    function getItemInfo(
+        uint256 _listingId
+    ) public view returns (ItemInfo memory) {
+        return listedItems[_listingId];
     }
 }

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {BridgeWatersMarketplace} from "../src/BridgeWatersMarketplace.sol";
+import {BridgeWatersMarketplace, ItemInfo} from "../src/BridgeWatersMarketplace.sol";
 
 contract BridgeWatersMarketplaceTest is Test {
     BridgeWatersMarketplace public bridgeWaters;
@@ -23,12 +23,16 @@ contract BridgeWatersMarketplaceTest is Test {
         uint256 _tokenId,
         uint256 _price,
         uint256 _deadline,
-        bytes memory _signature
+        bytes memory _signature,
+        uint _listingId
     ) public {
-        BridgeWatersMarketplace.ItemInfo storage itemInfo = bridgeWaters
-            .listedItems[itemsCounter];
+        ItemInfo memory itemInfo = bridgeWaters.getItemInfo(_listingId);
 
-        assertEq(bridgeWaters.ItemInfo.tokenAddress(), _tokenAddress);
+        assertEq(itemInfo.tokenAddress, _tokenAddress);
+        assertEq(itemInfo.tokenId, _tokenId);
+        assertEq(itemInfo.price, _price);
+        assertEq(itemInfo.deadline, _deadline);
+        assertEq(itemInfo.signature, _signature);
     }
 
     function test_BuyItem(uint256 _orderId) public {}
