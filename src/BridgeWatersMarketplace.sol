@@ -1,167 +1,151 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
-
-struct ItemInfo {
-    address payable owner;
-    address tokenAddress;
-    uint256 tokenId;
-    uint256 price;
-    bytes signature;
-    uint256 deadline;
-    bool isActive;
-}
+import {SignUtils} from "./libraries/SignUtils.sol";
 
 contract BridgeWatersMarketplace {
-    uint256 public itemsCounter;
-    mapping(uint256 itemsCounter => ItemInfo) public listedItems;
+    struct ListingInfo {
+        address token;
+        uint256 tokenId;
+        uint256 price;
+        bytes signature;
+        // slot packing... Slot 4
+        uint88 deadline;
+        address seller;
+        bool isActive;
+    }
 
-    event ItemListed(
-        address owner,
-        uint256 indexed _tokenId,
-        address indexed _tokenAddress,
-        uint256 indexed _price,
-        uint256 _deadline
-    );
+    mapping(uint256 => ListingInfo) public listingsInfo;
+    address public admin;
+    uint256 public listingId;
 
-    event ItemSold(
-        address indexed owner,
-        uint256 indexed tokenId,
-        uint256 indexed price
-    );
+    /* ERRORS */
+    error NotOwner();
+    error NotApproved();
+    error MinPriceTooLow();
+    error DeadlineTooSoon();
+    error MinDurationNotMet();
+    error InvalidSignature();
+    error ListingNotExistent();
+    error ListingNotActive();
+    error PriceNotMet(int256 difference);
+    error ListingExpired();
+    error PriceMismatch(uint256 originalPrice);
 
-    function getSigHash(
-        address _tokenAddress,
-        address _owner,
+    /* EVENTS */
+    event ListingCreated(uint256 indexed listingId, ListingInfo);
+    event ListingExecuted(uint256 indexed listingId, ListingInfo);
+    event ListingEdited(uint256 indexed listingId, ListingInfo);
+
+    constructor() {
+        admin = msg.sender;
+    }
+
+    function createListing(
+        address _token,
         uint256 _tokenId,
         uint256 _price,
-        uint256 _deadline
-    ) public pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encodePacked(
-                    _tokenAddress,
-                    _owner,
+        uint88 _deadline,
+        address _seller,
+        bytes memory _signature
+    ) public returns (uint256 _listingId) {
+        if (IERC721(_token).ownerOf(_tokenId) != msg.sender) revert NotOwner();
+        if (!IERC721(_token).isApprovedForAll(msg.sender, address(this)))
+            revert NotApproved();
+        if (_price < 0.01 ether) revert MinPriceTooLow();
+        if (_deadline < block.timestamp) revert DeadlineTooSoon();
+        if (_deadline - block.timestamp < 60 minutes)
+            revert MinDurationNotMet();
+
+        // Assert signature
+        if (
+            !SignUtils.isValid(
+                SignUtils.constructMessageHash(
+                    _token,
                     _tokenId,
                     _price,
-                    _deadline
-                )
-            );
-    }
-
-    function verifySignature(
-        bytes32 _sigHash,
-        bytes memory _signature,
-        address _expectedSigner
-    ) public pure returns (bool) {
-        return ECDSA.recover(_sigHash, _signature) == _expectedSigner;
-    }
-
-    function listItem(
-        address _tokenAddress,
-        uint256 _tokenId,
-        uint256 _price,
-        uint256 _deadline,
-        bytes memory _signature
-    ) public {
-        // checks
-        require(
-            msg.sender == IERC721(_tokenAddress).ownerOf(_tokenId),
-            "Not owner"
-        );
-        require(
-            IERC721(_tokenAddress).isApprovedForAll(msg.sender, address(this)),
-            "ERC721: Insufficient Approval"
-        );
-        require(_tokenAddress != address(0), "Invalid tokenAddress");
-        require(_price > 0, "Zero Price Not Allowed");
-        require(_tokenId != 0, "Invalid tokenId");
-        require(
-            _deadline > block.timestamp + 1 days,
-            "Deadline should be in the future"
-        );
-
-        // increment counter
-        itemsCounter += 1;
+                    _deadline,
+                    _seller
+                ),
+                _signature,
+                msg.sender
+            )
+        ) revert InvalidSignature();
 
         // transfer the NFT from owner to marketplace
-        IERC721(_tokenAddress).transferFrom(
-            msg.sender,
-            address(this),
-            _tokenId
-        );
+        IERC721(_token).transferFrom(msg.sender, address(this), _tokenId);
 
-        // Access storage loaction
-        ItemInfo storage itemInfo = listedItems[itemsCounter];
+        // append to Storage
+        ListingInfo storage newListingInfo = listingsInfo[listingId];
 
-        // Update the struct mapping
-        itemInfo.tokenId = _tokenId;
-        itemInfo.tokenAddress = _tokenAddress;
-        itemInfo.deadline = _deadline;
-        itemInfo.owner = payable(msg.sender);
-        itemInfo.price = _price;
-        itemInfo.signature = _signature;
-        itemInfo.isActive = true;
+        newListingInfo.token = _token;
+        newListingInfo.tokenId = _tokenId;
+        newListingInfo.price = _price;
+        newListingInfo.signature = _signature;
+        newListingInfo.deadline = _deadline;
+        newListingInfo.seller = msg.sender;
+        newListingInfo.isActive = true;
 
-        // emit event
-        emit ItemListed(msg.sender, _tokenId, _tokenAddress, _price, _deadline);
+        _listingId = listingId;
+        listingId++;
+
+        // Emit event
+        emit ListingCreated(listingId, newListingInfo);
+
+        return listingId;
     }
 
-    function buyItem(uint256 _listingId) external payable {
-        require(
-            _listingId != 0 && _listingId <= itemsCounter,
-            "Wrong _listingId"
-        );
+    function executeListing(uint256 _listingId) public payable {
+        if (_listingId >= listingId) revert ListingNotExistent();
 
-        ItemInfo storage itemInfo = listedItems[_listingId];
+        ListingInfo storage listing = listingsInfo[_listingId];
 
-        require(
-            block.timestamp <= itemInfo.deadline,
-            "Order deadline has passed"
-        );
-        require(msg.value == itemInfo.price, "Wrong ETH was sent");
-        require(!itemInfo.isActive, "NFT-Order is already sold");
+        if (listing.deadline < block.timestamp) revert ListingExpired();
 
-        bytes32 sigHash = getSigHash(
-            itemInfo.tokenAddress,
-            itemInfo.owner,
-            itemInfo.tokenId,
-            itemInfo.price,
-            itemInfo.deadline
-        );
-        require(
-            verifySignature(sigHash, itemInfo.signature, itemInfo.owner),
-            "Invalid signature"
-        );
+        if (!listing.isActive) revert ListingNotActive();
 
-        itemInfo.isActive = true;
+        if (listing.price < msg.value) revert PriceMismatch(listing.price);
 
-        (bool sent, ) = itemInfo.owner.call{value: msg.value}("");
-        require(sent, "Failed to transfer ETH");
+        if (listing.price != msg.value)
+            revert PriceNotMet(int256(listing.price) - int256(msg.value));
 
-        IERC721(itemInfo.tokenAddress).transferFrom(
-            address(this),
+        // Update state
+        listing.isActive = false;
+
+        // transfer
+        IERC721(listing.token).transferFrom(
+            listing.seller,
             msg.sender,
-            itemInfo.tokenId
+            listing.tokenId
         );
 
-        emit ItemSold(msg.sender, itemInfo.tokenId, msg.value);
+        // transfer eth
+        payable(listing.seller).transfer(listing.price);
+
+        // Update storage
+        emit ListingExecuted(_listingId, listing);
     }
 
-    address payable owner;
-    address tokenAddress;
-    uint256 tokenId;
-    uint256 price;
-    bytes signature;
-    uint256 deadline;
-    bool isActive;
+    function editListing(
+        uint256 _listingId,
+        uint256 _newPrice,
+        bool _isActive
+    ) public {
+        if (_listingId >= listingId) revert ListingNotExistent();
+        ListingInfo storage listing = listingsInfo[_listingId];
+        if (listing.seller != msg.sender) revert NotOwner();
+        listing.price = _newPrice;
+        listing.isActive = _isActive;
 
-    function getItemInfo(
+        emit ListingEdited(_listingId, listing);
+    }
+
+    // add getter for listing
+    function getListing(
         uint256 _listingId
-    ) public view returns (ItemInfo memory) {
-        return listedItems[_listingId];
+    ) public view returns (ListingInfo memory) {
+        // if (_listingId >= listingId)
+        return listingsInfo[_listingId];
     }
 }
