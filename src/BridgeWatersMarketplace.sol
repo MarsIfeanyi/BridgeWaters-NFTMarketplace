@@ -4,18 +4,18 @@ pragma solidity ^0.8.13;
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {SignUtils} from "./libraries/SignUtils.sol";
 
-contract BridgeWatersMarketplace {
-    struct ListingInfo {
-        address token;
-        uint256 tokenId;
-        uint256 price;
-        bytes signature;
-        // slot packing... Slot 4
-        uint88 deadline;
-        address seller;
-        bool isActive;
-    }
+struct ListingInfo {
+    address token;
+    uint256 tokenId;
+    uint256 price;
+    bytes signature;
+    // slot packing... Slot 4
+    uint88 deadline;
+    address seller;
+    bool isActive;
+}
 
+contract BridgeWatersMarketplace {
     mapping(uint256 => ListingInfo) public listingsInfo;
     address public admin;
     uint256 public listingId;
