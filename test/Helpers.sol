@@ -21,7 +21,7 @@ abstract contract Helpers is Test {
         uint256 _price,
         uint88 _deadline,
         address _seller,
-        uint256 privKey
+        uint256 privateKey
     ) public pure returns (bytes memory sig) {
         bytes32 mHash = keccak256(
             abi.encodePacked(_token, _tokenId, _price, _deadline, _seller)
@@ -31,7 +31,7 @@ abstract contract Helpers is Test {
             abi.encodePacked("\x19Ethereum Signed Message:\n32", mHash)
         );
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privKey, mHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, mHash);
         sig = getSig(v, r, s);
     }
 
@@ -42,6 +42,16 @@ abstract contract Helpers is Test {
     ) public pure returns (bytes memory sig) {
         sig = bytes.concat(r, s, bytes1(v));
     }
+
+    // function switchSigner(address _newSigner) public {
+    //     address foundrySigner = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+    //     if (msg.sender == foundrySigner) {
+    //         vm.startPrank(_newSigner);
+    //     } else {
+    //         vm.stopPrank();
+    //         vm.label(_newSigner, "USER");
+    //     }
+    // }
 
     function switchSigner(address _newSigner) public {
         vm.startPrank(_newSigner);
