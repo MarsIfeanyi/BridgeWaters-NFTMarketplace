@@ -4,18 +4,18 @@ pragma solidity ^0.8.13;
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {SignUtils} from "./libraries/SignUtils.sol";
 
-struct ListingInfo {
-    address token;
-    uint256 tokenId;
-    uint256 price;
-    bytes signature;
-    // slot packing... Slot 4
-    uint88 deadline;
-    address seller;
-    bool isActive;
-}
-
 contract BridgeWatersMarketplace {
+    struct ListingInfo {
+        address token;
+        uint256 tokenId;
+        uint256 price;
+        bytes signature;
+        // slot packing... Slot 4
+        uint88 deadline;
+        address seller;
+        bool isActive;
+    }
+
     mapping(uint256 => ListingInfo) public listingsInfo;
     address public admin;
     uint256 public listingId;
@@ -26,8 +26,8 @@ contract BridgeWatersMarketplace {
     error MinPriceTooLow();
     error DeadlineTooSoon();
     error MinDurationNotMet();
-    error InvalidSignature();
-    error ListingNotExistent();
+    error InValidSignature();
+    error ListingDoesNotExist();
     error ListingNotActive();
     error PriceNotMet(int256 difference);
     error ListingExpired();
@@ -46,15 +46,17 @@ contract BridgeWatersMarketplace {
         address _token,
         uint256 _tokenId,
         uint256 _price,
+        bytes memory _signature,
         uint88 _deadline,
-        address _seller,
-        bytes memory _signature
+        address _seller
     ) public returns (uint256 _listingId) {
         if (IERC721(_token).ownerOf(_tokenId) != msg.sender) revert NotOwner();
         if (!IERC721(_token).isApprovedForAll(msg.sender, address(this)))
             revert NotApproved();
         if (_price < 0.01 ether) revert MinPriceTooLow();
+        // check if deadline is lessthan currentTime
         if (_deadline < block.timestamp) revert DeadlineTooSoon();
+        // check if deadline is lessthan 60 minutes
         if (_deadline - block.timestamp < 60 minutes)
             revert MinDurationNotMet();
 
@@ -71,7 +73,7 @@ contract BridgeWatersMarketplace {
                 _signature,
                 msg.sender
             )
-        ) revert InvalidSignature();
+        ) revert InValidSignature();
 
         // transfer the NFT from owner to marketplace
         IERC721(_token).transferFrom(msg.sender, address(this), _tokenId);
@@ -97,7 +99,7 @@ contract BridgeWatersMarketplace {
     }
 
     function executeListing(uint256 _listingId) public payable {
-        if (_listingId >= listingId) revert ListingNotExistent();
+        if (_listingId >= listingId) revert ListingDoesNotExist();
 
         ListingInfo storage listing = listingsInfo[_listingId];
 
@@ -132,7 +134,7 @@ contract BridgeWatersMarketplace {
         uint256 _newPrice,
         bool _isActive
     ) public {
-        if (_listingId >= listingId) revert ListingNotExistent();
+        if (_listingId >= listingId) revert ListingDoesNotExist();
         ListingInfo storage listing = listingsInfo[_listingId];
         if (listing.seller != msg.sender) revert NotOwner();
         listing.price = _newPrice;
