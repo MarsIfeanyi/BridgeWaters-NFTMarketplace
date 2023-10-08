@@ -11,7 +11,7 @@ contract BridgeWatersMarketplace {
         uint256 price;
         bytes signature;
         // slot packing... Slot 4
-        uint88 deadline;
+        uint256 deadline;
         address seller;
         bool isActive;
     }
@@ -34,7 +34,7 @@ contract BridgeWatersMarketplace {
     error PriceMismatch(uint256 originalPrice);
 
     /* EVENTS */
-    event ListingCreated(uint256 indexed listingId, ListingInfo);
+    event ListingCreated(uint256 indexed listingId);
     event ListingExecuted(uint256 indexed listingId, ListingInfo);
     event ListingEdited(uint256 indexed listingId, ListingInfo);
 
@@ -47,15 +47,17 @@ contract BridgeWatersMarketplace {
         uint256 _tokenId,
         uint256 _price,
         bytes memory _signature,
-        uint88 _deadline,
-        address _seller
+        uint256 _deadline,
+        address _seller,
+        bool _isActive
     ) public returns (uint256 _listingId) {
         if (IERC721(_token).ownerOf(_tokenId) != msg.sender) revert NotOwner();
         if (!IERC721(_token).isApprovedForAll(msg.sender, address(this)))
             revert NotApproved();
         if (_price < 0.01 ether) revert MinPriceTooLow();
         // check if deadline is lessthan currentTime
-        if (_deadline < block.timestamp) revert DeadlineTooSoon();
+        if (block.timestamp + _deadline <= block.timestamp)
+            revert DeadlineTooSoon();
         // check if deadline is lessthan 60 minutes
         if (_deadline - block.timestamp < 60 minutes)
             revert MinDurationNotMet();
@@ -87,22 +89,23 @@ contract BridgeWatersMarketplace {
         newListingInfo.signature = _signature;
         newListingInfo.deadline = _deadline;
         newListingInfo.seller = msg.sender;
-        newListingInfo.isActive = true;
+        newListingInfo.isActive = _isActive;
 
         _listingId = listingId;
         listingId++;
 
         // Emit event
-        emit ListingCreated(listingId, newListingInfo);
+        emit ListingCreated(listingId);
 
         return listingId;
     }
 
-    function executeListing(uint256 _listingId) public payable {
+    function buyListing(uint256 _listingId) public payable {
         if (_listingId >= listingId) revert ListingDoesNotExist();
 
         ListingInfo storage listing = listingsInfo[_listingId];
 
+        // checks if deadline is lessthan the currentTime
         if (listing.deadline < block.timestamp) revert ListingExpired();
 
         if (!listing.isActive) revert ListingNotActive();
@@ -129,14 +132,19 @@ contract BridgeWatersMarketplace {
         emit ListingExecuted(_listingId, listing);
     }
 
-    function editListing(
+    function updateListing(
         uint256 _listingId,
         uint256 _newPrice,
         bool _isActive
     ) public {
-        if (_listingId >= listingId) revert ListingDoesNotExist();
+        // require(_listingId > listingId, "Higher Higher");
+
+        if (_listingId > listingId) revert ListingDoesNotExist();
+
         ListingInfo storage listing = listingsInfo[_listingId];
+
         if (listing.seller != msg.sender) revert NotOwner();
+
         listing.price = _newPrice;
         listing.isActive = _isActive;
 
