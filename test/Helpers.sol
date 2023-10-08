@@ -19,7 +19,7 @@ abstract contract Helpers is Test {
         address _token,
         uint256 _tokenId,
         uint256 _price,
-        uint88 _deadline,
+        uint256 _deadline,
         address _seller,
         uint256 privateKey
     ) public pure returns (bytes memory sig) {
